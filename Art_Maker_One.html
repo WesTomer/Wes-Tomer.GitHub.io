@@ -1,0 +1,253 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draggable Colored Circles with Size Slider</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            position: relative;
+        }
+        #canvas {
+            width: 100vw;
+            height: 100vh;
+            background: #f0f0f0;
+        }
+        #addButton {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 24px;
+            padding: 10px 15px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        #addButton:hover {
+            background: #45a049;
+        }
+        #saveButton {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 18px;
+            padding: 10px 15px;
+            cursor: pointer;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        #saveButton:hover {
+            background: #1e88e5;
+        }
+        #sizeSlider {
+            position: absolute;
+            top: 60px;
+            left: 10px;
+            width: 75px;
+            height: 80vh;
+            z-index: 10;
+        }
+        #sizeSlider input[type="range"] {
+            writing-mode: bt-lr;
+            -webkit-appearance: slider-vertical;
+            width: 100%;
+            height: 75px;
+            cursor: pointer;
+            transform: scale(2.5);
+            transform-origin: top left;
+        }
+    </style>
+</head>
+<body>
+    <button id="addButton">+</button>
+    <button id="saveButton">Save</button>
+    <div id="sizeSlider">
+        <input type="range" id="radiusSlider" min="10" max="100" value="30" step="1">
+    </div>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const addButton = document.getElementById('addButton');
+        const saveButton = document.getElementById('saveButton');
+        const radiusSlider = document.getElementById('radiusSlider');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let circles = [];
+        let selectedCircle = null;
+        let isDragging = false;
+
+        class Circle {
+            constructor(x, y, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.color = color;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = 0.5;
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+                ctx.closePath();
+            }
+
+            isPointInside(x, y) {
+                const dx = x - this.x;
+                const dy = y - this.y;
+                return Math.sqrt(dx * dx + dy * dy) < this.radius;
+            }
+        }
+
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        addButton.addEventListener('click', () => {
+            const x = Math.random() * (canvas.width - 100) + 50;
+            const y = Math.random() * (canvas.height - 100) + 50;
+            const radius = parseInt(radiusSlider.value);
+            const color = getRandomColor();
+            const circle = new Circle(x, y, radius, color);
+            circles.push(circle);
+            redraw();
+        });
+
+        saveButton.addEventListener('click', () => {
+            try {
+                // Ensure canvas is redrawn before saving
+                redraw();
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        throw new Error('Failed to create blob from canvas');
+                    }
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'canvas.png';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url); // Clean up
+                    console.log('Canvas saved as PNG');
+                }, 'image/png');
+            } catch (error) {
+                console.error('Error saving canvas:', error);
+                // Fallback: Open image in new tab
+                try {
+                    const dataURL = canvas.toDataURL('image/png');
+                    window.open(dataURL, '_blank');
+                    alert('Download failed, but the image has been opened in a new tab. Right-click to save it manually.');
+                } catch (fallbackError) {
+                    console.error('Fallback failed:', fallbackError);
+                    alert('Failed to save or open the canvas. Please check browser permissions or try another browser.');
+                }
+            }
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            for (let i = circles.length - 1; i >= 0; i--) {
+                if (circles[i].isPointInside(mouseX, mouseY)) {
+                    selectedCircle = circles[i];
+                    isDragging = true;
+                    break;
+                } else {
+                    selectedCircle = null;
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging && selectedCircle) {
+                const rect = canvas.getBoundingClientRect();
+                selectedCircle.x = e.clientX - rect.left;
+                selectedCircle.y = e.clientY - rect.top;
+                redraw();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        radiusSlider.addEventListener('input', () => {
+            if (selectedCircle) {
+                selectedCircle.radius = parseInt(radiusSlider.value);
+                redraw();
+            }
+        });
+
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            circles.forEach(circle => circle.draw());
+        }
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            redraw();
+        });
+    </script>
+</body>
+</html>
